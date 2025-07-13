@@ -234,7 +234,6 @@ The generated CSV report includes the following columns:
 
 | Column | Description |
 |--------|-------------|
-| Account Name | AWS Account Name |
 | Account ID | AWS Account ID |
 | Region | AWS Region |
 | Instance ID | EC2 Instance ID |
