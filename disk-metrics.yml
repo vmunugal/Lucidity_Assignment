@@ -4,7 +4,7 @@
   tasks:
     - name: set Header for report file
       set_fact:
-        header: "Account Name,Account ID,Region,Instance ID,Device Name,Total Size,Used Size,Remaining Size,Disk Use %"
+        header: "Account ID,Region,Instance ID,Device Name,Total Size,Used Size,Remaining Size,Disk Use %"
 
     - name: Create report with header
       copy:
@@ -22,11 +22,10 @@
       set_fact:
         aws_region: "{{ aws_region | default('unknown') }}"
         account_id: "{{ aws_account_id | default('unknown') }}"
-        account_name: "{{ aws_account_name | default('unknown') }}"
 
     - name: account & region details
       debug:
-        msg: "Account Name: {{ account_name }}, Account ID: {{ account_id }}, Region: {{ aws_region }}"
+        msg: "Account ID: {{ account_id }}, Region: {{ aws_region }}"
 
     - name: Get disk utilization
       shell: df -h /
@@ -40,7 +39,7 @@
     
     - name: Format disk data line with CSV
       set_fact:
-        formatted_line: "{{ account_name }},{{ account_id }},{{ aws_region }},{{ inventory_hostname }},{{ disk_parts[0] }},{{ disk_parts[1] }},{{ disk_parts[2] }},{{ disk_parts[3] }},{{ disk_parts[4] }}"
+        formatted_line: "{{ account_id }},{{ aws_region }},{{ inventory_hostname }},{{ disk_parts[0] }},{{ disk_parts[1] }},{{ disk_parts[2] }},{{ disk_parts[3] }},{{ disk_parts[4] }}"
       when: disk_parts is defined
 
     - name: Append formatted disk data to local file
