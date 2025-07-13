@@ -1,0 +1,24 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "organizations:ListAccountsForParent",
+                "ec2:DescribeInstances"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "sts:AssumeRole"
+            ],
+            "Resource": [
+                "arn:aws:s3:::my-ec2-disk-reports/*",
+                "arn:aws:iam::*:role/ansible_controller"
+            ]
+        }
+    ]
+}

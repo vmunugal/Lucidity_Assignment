@@ -1,0 +1,14 @@
+ansible_ssh_private_key_file: ansible.pem
+ansible_ssh_user: ubuntu
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+ou_ids:
+  - ou-ho27-9do7jpuw
+regions:
+  - us-east-1
+  - ap-south-1
+  - us-west-2
+role_name: ansible_collector
+aws_config_path: "/home/ubuntu/.aws/config"
+s3_bucket_name: "my-ec2-disk-reports"  # S3 bucket name
+s3_report_path: "disk_utilization_reports/"  # Path inside the S3 bucket
+local_report_path: "/tmp/disk_utilization_report.csv"

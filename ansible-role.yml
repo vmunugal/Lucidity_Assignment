@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role for Ansible Collector with EC2 ReadOnly Access'
+
+Parameters:
+  CentralAccountId:
+    Type: String
+    Description: Ansible Controller Account ID
+    AllowedPattern: '[0-9]{12}'
+  RoleName:
+    Type: String
+    Default: 'ansible_collector'
+    Description: Name of the role to be created
+    AllowedPattern: '[\w+=,.@-]+'
+
+
+Resources:
+  AnsibleCollectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${CentralAccountId}:root'
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+
+Outputs:
+  RoleArn:
+    Description: ARN of the created role
+    Value: !GetAtt AnsibleCollectorRole.Arn

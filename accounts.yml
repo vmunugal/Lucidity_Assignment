@@ -1,0 +1,135 @@
+- name: Setup AWS profiles from OU accounts
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Initialize all accounts list
+      set_fact:
+        all_accounts: []
+
+    - name: List accounts in each OU
+      shell: |
+        aws organizations list-accounts-for-parent --parent-id {{ item }} --query 'Accounts[*].{Id:Id,Name:Name}' --output json
+      register: accounts_raw
+      loop: "{{ ou_ids }}"
+      delegate_to: localhost
+
+    - name: Combine accounts from all OUs
+      set_fact:
+        all_accounts: "{{ all_accounts + (item.stdout | from_json) }}"
+      loop: "{{ accounts_raw.results }}"
+
+    - name: Set accounts info
+      set_fact:
+        accounts_info:
+          accounts: "{{ all_accounts }}"
+
+
+    - name: Read existing AWS config
+      slurp:
+        src: "{{ aws_config_path }}"
+      register: existing_config
+      ignore_errors: yes
+
+    - name: Parse existing profiles
+      set_fact:
+        existing_profiles: "{{ (existing_config.content | b64decode).split('\n') | select('match', '^\\[profile .*\\]$') | map('regex_replace', '^\\[profile (.*)\\]$', '\\1') | list }}"
+      when: existing_config is succeeded
+
+    - name: Set empty profiles list if config doesn't exist
+      set_fact:
+        existing_profiles: []
+      when: existing_config is failed
+
+    - name: Generate profile configurations
+      set_fact:
+        new_profiles: |
+          {% for account in accounts_info.accounts %}
+          {% for region in regions %}
+          {% set profile_name = account.Name | regex_replace('[^a-zA-Z0-9_-]', '_') + '_' + region %}
+          {% if profile_name not in existing_profiles %}
+
+          [profile {{ profile_name }}]
+          role_arn = arn:aws:iam::{{ account.Id }}:role/{{ role_name }}
+          credential_source = Ec2InstanceMetadata
+          region = {{ region }}
+          {% endif %}
+          {% endfor %}
+          {% endfor %}
+    - name: Append new profiles to AWS config
+      blockinfile:
+        path: "{{ aws_config_path }}"
+        block: "{{ new_profiles }}"
+        create: yes
+        mode: '0600'
+        marker: "# {mark} ANSIBLE MANAGED PROFILES"
+      when: new_profiles | trim | length > 0
+
+    - name: Generate accounts variable
+      set_fact:
+        accounts: |
+          {% set accounts_list = [] %}
+          {% for account in accounts_info.accounts %}
+          {% for region in regions %}
+          {% set profile_name = account.Name | regex_replace('[^a-zA-Z0-9_-]', '_') + '_' + region %}
+          {% set account_dict = {'profile': profile_name, 'region': region, 'account_id': account.Id, 'account_name': account.Name} %}
+          {% set _ = accounts_list.append(account_dict) %}
+          {% endfor %}
+          {% endfor %}
+          {{ accounts_list }}
+
+    - name: Display accounts variable
+      debug:
+        var: accounts
+
+    - name: Create vars directory
+      file:
+        path: "./vars"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      ignore_errors: yes
+
+    - name: Save accounts to file
+      copy:
+        content: |
+          accounts:
+          {% for account in accounts %}
+            - profile: "{{ account.profile }}"
+              region: "{{ account.region }}"
+              account_id: "{{ account.account_id }}"
+              account_name: "{{ account.account_name }}"
+          {% endfor %}
+        dest: "./vars/account_vars.yml"
+        mode: '0644'
+      delegate_to: localhost
+    
+    - name: Create inventory directory
+      file:
+        path: "./inventory"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+      ignore_errors: yes
+    
+    - name: Create dynamic inventory files
+      copy:
+        content: |
+          plugin: amazon.aws.aws_ec2
+          profile: "{{ item.profile }}"
+          regions:
+            - "{{ item.region }}"
+          hostnames:
+            - instance-id
+          filters:
+            instance-state-name: running
+          groups:
+            monitoring: "'yes' in tags.Monitor"
+          compose:
+            ansible_host: public_ip_address | default(private_ip_address)
+            aws_account_id: owner_id
+            aws_region: placement.region
+            aws_account_name: "{{ item.account_name }}"
+        dest: "./inventory/{{ item.profile }}_aws_ec2.yml"
+        mode: '0644'
+      loop: "{{ accounts }}"
+      delegate_to: localhost

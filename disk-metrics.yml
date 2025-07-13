@@ -1,0 +1,78 @@
+---
+- name: Local report header
+  hosts: localhost
+  tasks:
+    - name: set Header for report file
+      set_fact:
+        header: "Account Name,Account ID,Region,Instance ID,Device Name,Total Size,Used Size,Remaining Size,Disk Use %"
+
+    - name: Create report with header
+      copy:
+        content: "{{ header }}"
+        dest: "{{ local_report_path }}"
+        mode: '0644'
+
+- name: Fetch and report disk utilization (free disk space) from EC2 instances and upload to S3
+  hosts: monitoring
+  gather_facts: yes
+  vars_files:
+    - vars/account_vars.yml
+  tasks:
+    - name: Set AWS region, account ID and account name from inventory
+      set_fact:
+        aws_region: "{{ aws_region | default('unknown') }}"
+        account_id: "{{ aws_account_id | default('unknown') }}"
+        account_name: "{{ aws_account_name | default('unknown') }}"
+
+    - name: account & region details
+      debug:
+        msg: "Account Name: {{ account_name }}, Account ID: {{ account_id }}, Region: {{ aws_region }}"
+
+    - name: Get disk utilization
+      shell: df -h /
+      register: disk_output
+      ignore_errors: yes
+
+    - name: Parse disk data
+      set_fact:
+        disk_parts: "{{ disk_output.stdout_lines[1].split() }}"
+      when: disk_output is succeeded and disk_output.stdout_lines | length > 1
+    
+    - name: Format disk data line with CSV
+      set_fact:
+        formatted_line: "{{ account_name }},{{ account_id }},{{ aws_region }},{{ inventory_hostname }},{{ disk_parts[0] }},{{ disk_parts[1] }},{{ disk_parts[2] }},{{ disk_parts[3] }},{{ disk_parts[4] }}"
+      when: disk_parts is defined
+
+    - name: Append formatted disk data to local file
+      lineinfile:
+        path: "{{ local_report_path }}"
+        line: "{{ formatted_line }}"
+        create: yes
+      delegate_to: localhost
+      when: formatted_line is defined
+
+- name: Upload report to S3 and clean the local file
+  hosts: localhost
+  vars:
+    s3_bucket_name: "my-ec2-disk-reports"
+    s3_report_path: "disk_utilization_reports/"
+    local_report_path: "/tmp/disk_utilization_report.csv"
+  tasks:
+    - name: Count lines in report file
+      shell: wc -l < "{{ local_report_path }}"
+      register: line_count
+      ignore_errors: yes
+
+    - name: Upload report to S3
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "{{ s3_report_path }}disk_utilization_report_{{ ansible_date_time.epoch }}.csv"
+        src: "{{ local_report_path }}"
+        mode: put
+      when: line_count.stdout | int > 1
+
+    - name: Clean the local file
+      file:
+        path: "{{ local_report_path }}"
+        state: absent
+
